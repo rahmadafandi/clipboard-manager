@@ -32,3 +32,5 @@ Thumbs.db
 # PID file from our app 
 # (though it saves to cache dir usually, good to verify if running locally)
 *.pid
+# Added by goreleaser init:
+dist/

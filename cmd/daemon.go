@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/spf13/cobra"
 )
@@ -41,8 +40,8 @@ var startCmd = &cobra.Command{
 			pid, _ := strconv.Atoi(strings.TrimSpace(string(pidBytes)))
 			process, err := os.FindProcess(pid)
 			if err == nil {
-				// Send signal 0 to check if running
-				if err := process.Signal(syscall.Signal(0)); err == nil {
+				// Check if running using platform-specific method
+				if isProcessRunning(process) {
 					fmt.Printf("Watcher is already running (PID: %d)\n", pid)
 					return
 				}
@@ -62,9 +61,7 @@ var startCmd = &cobra.Command{
 		// We use "watch" subcommand
 		cmdArgs := []string{"watch"}
 		watchCmd := exec.Command(exe, cmdArgs...)
-		watchCmd.SysProcAttr = &syscall.SysProcAttr{
-			Setsid: true, // Detach from terminal
-		}
+		configureSysProcAttr(watchCmd)
 
 		if err := watchCmd.Start(); err != nil {
 			fmt.Println("Failed to start watcher:", err)
@@ -118,7 +115,7 @@ var stopCmd = &cobra.Command{
 			return
 		}
 
-		if err := process.Signal(syscall.SIGTERM); err != nil {
+		if err := terminateProcess(process); err != nil {
 			fmt.Println("Failed to stop process:", err)
 			return
 		}

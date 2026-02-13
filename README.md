@@ -18,6 +18,8 @@ go install github.com/rahmadafandi/clipboard-manager@latest
 ```
 
 ### Option 2: Build from Source
+
+#### Linux / macOS
 ```bash
 git clone https://github.com/rahmadafandi/clipboard-manager.git
 cd clipboard-manager
@@ -25,35 +27,75 @@ go mod tidy
 go build -o clipboard-manager
 ```
 
+#### Windows (PowerShell)
+```powershell
+git clone https://github.com/rahmadafandi/clipboard-manager.git
+cd clipboard-manager
+go mod tidy
+go build -o clipboard-manager.exe
+```
+
 ## Usage
 
 ### 1. Start the Watcher
 Start the background recording process:
 
+#### Linux / macOS
 ```bash
 ./clipboard-manager start
 ```
 
-To stop it later:
+#### Windows (PowerShell)
+```powershell
+.\clipboard-manager.exe start
+```
+
+### 2. Stop the Watcher
+To stop the background process:
+
+#### Linux / macOS
 ```bash
 ./clipboard-manager stop
 ```
 
-### 2. Select from History
+#### Windows (PowerShell)
+```powershell
+.\clipboard-manager.exe stop
+```
+
+### 3. Select from History
 To pick an item, simply run:
 
+#### Linux / macOS
 ```bash
-./clipboard-manager
+./clipboard-manager pick
 ```
-(or `./clipboard-manager pick`)
+
+#### Windows (PowerShell)
+```powershell
+.\clipboard-manager.exe pick
+```
+(or just `.\clipboard-manager.exe` without arguments)
 
 Use arrow keys to navigate and **Enter** to select. The item will be copied to your clipboard.
 
-### 3. Global Keyboard Shortcut
+## Global Keyboard Shortcuts
+
 Since this is a CLI tool, if you bind it to a global shortcut (e.g., `Super+V`), you must run it **inside a terminal**.
 
-For example, on Ubuntu/GNOME:
+### Linux (GNOME / Unity / etc.)
 - **Command**: `gnome-terminal -- /path/to/clipboard-manager pick`
 - Or if you use Alacritty: `alacritty -e /path/to/clipboard-manager pick`
 
-If you just run `/path/to/clipboard-manager`, it will run in the background and you won't see the UI.
+### macOS
+- You can use **Automator** to create a "Service" or "Quick Action" that runs a shell script:
+  ```bash
+  open -a Terminal /path/to/clipboard-manager --args pick
+  ```
+- Bind this service to a keyboard shortcut in System Settings -> Keyboard -> Shortcuts.
+
+### Windows
+- Create a Shortcut to `clipboard-manager.exe`.
+- Right-click the shortcut -> Properties.
+- Set "Shortcut key" to your desired combination (e.g., `Ctrl + Alt + V`).
+- Note: This will open a console window briefly. To hide it, you might need a wrapper script or utility like AutoHotkey.
