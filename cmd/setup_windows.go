@@ -8,6 +8,10 @@ import (
 	"path/filepath"
 )
 
+func installDependencies() error {
+	return nil
+}
+
 func getStartupPath() (string, error) {
 	appData := os.Getenv("APPDATA")
 	if appData == "" {

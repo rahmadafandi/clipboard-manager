@@ -12,6 +12,107 @@ import (
 	"strings"
 )
 
+// requiredPkgs lists the packages needed for the popup picker and notifications.
+var requiredPkgs = []struct {
+	bin     string // binary to check in PATH
+	aptPkg  string
+	dnfPkg  string
+	pacPkg  string
+	zypper  string
+}{
+	{"rofi", "rofi", "rofi", "rofi", "rofi"},
+	{"notify-send", "libnotify-bin", "libnotify", "libnotify", "libnotify-tools"},
+}
+
+func detectPkgManager() (name string, installCmd []string) {
+	managers := []struct {
+		bin  string
+		name string
+		args []string
+	}{
+		{"apt-get", "apt", []string{"sudo", "apt-get", "install", "-y"}},
+		{"dnf", "dnf", []string{"sudo", "dnf", "install", "-y"}},
+		{"pacman", "pacman", []string{"sudo", "pacman", "-S", "--noconfirm"}},
+		{"zypper", "zypper", []string{"sudo", "zypper", "install", "-y"}},
+	}
+	for _, m := range managers {
+		if _, err := exec.LookPath(m.bin); err == nil {
+			return m.name, m.args
+		}
+	}
+	return "", nil
+}
+
+func pkgNameForManager(pkg struct {
+	bin     string
+	aptPkg  string
+	dnfPkg  string
+	pacPkg  string
+	zypper  string
+}, manager string) string {
+	switch manager {
+	case "apt":
+		return pkg.aptPkg
+	case "dnf":
+		return pkg.dnfPkg
+	case "pacman":
+		return pkg.pacPkg
+	case "zypper":
+		return pkg.zypper
+	}
+	return pkg.aptPkg
+}
+
+func installDependencies() error {
+	var missing []struct {
+		bin     string
+		aptPkg  string
+		dnfPkg  string
+		pacPkg  string
+		zypper  string
+	}
+
+	for _, pkg := range requiredPkgs {
+		if _, err := exec.LookPath(pkg.bin); err != nil {
+			missing = append(missing, pkg)
+		}
+	}
+
+	if len(missing) == 0 {
+		return nil
+	}
+
+	manager, installCmd := detectPkgManager()
+	if installCmd == nil {
+		names := make([]string, len(missing))
+		for i, m := range missing {
+			names[i] = m.bin
+		}
+		return fmt.Errorf("missing dependencies: %s\nCould not detect package manager. Please install manually",
+			strings.Join(names, ", "))
+	}
+
+	// Collect package names to install
+	var pkgNames []string
+	for _, m := range missing {
+		pkgNames = append(pkgNames, pkgNameForManager(m, manager))
+	}
+
+	fmt.Printf("Installing dependencies: %s ...\n", strings.Join(pkgNames, ", "))
+
+	args := append(installCmd, pkgNames...)
+	cmd := exec.Command(args[0], args[1:]...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to install packages: %w", err)
+	}
+	fmt.Println("✔ Dependencies installed")
+	return nil
+}
+
 const autostartDesktop = `[Desktop Entry]
 Type=Application
 Name=Clipboard Manager
@@ -73,31 +174,6 @@ func removeAutostart() error {
 		return err
 	}
 	return nil
-}
-
-func detectTerminal() string {
-	// Try common terminals in order of preference
-	terminals := []struct {
-		bin  string
-		args []string
-	}{
-		{"x-terminal-emulator", []string{"-e"}},
-		{"gnome-terminal", []string{"--"}},
-		{"konsole", []string{"-e"}},
-		{"alacritty", []string{"-e"}},
-		{"kitty", nil},
-		{"xfce4-terminal", []string{"-e"}},
-		{"xterm", []string{"-e"}},
-	}
-
-	for _, t := range terminals {
-		if _, err := exec.LookPath(t.bin); err == nil {
-			parts := []string{t.bin}
-			parts = append(parts, t.args...)
-			return strings.Join(parts, " ")
-		}
-	}
-	return "x-terminal-emulator -e"
 }
 
 func findExistingBinding() string {
@@ -163,8 +239,7 @@ func setupKeybinding() error {
 		return err
 	}
 
-	terminal := detectTerminal()
-	command := fmt.Sprintf("%s %s pick", terminal, exe)
+	command := fmt.Sprintf("%s popup", exe)
 
 	// Check if binding already exists
 	existingPath := findExistingBinding()

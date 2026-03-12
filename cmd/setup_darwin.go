@@ -25,6 +25,10 @@ const launchAgentPlist = `<?xml version="1.0" encoding="UTF-8"?>
 </plist>
 `
 
+func installDependencies() error {
+	return nil
+}
+
 func getLaunchAgentPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {

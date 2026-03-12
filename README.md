@@ -45,7 +45,7 @@ clipboard-manager setup
 
 This will:
 - Register the watcher daemon to start automatically on login
-- Bind **Super+V** to open the clipboard picker in a terminal (Linux/GNOME only)
+- Bind **Super+V** to open a lightweight popup picker (Linux/GNOME only, requires `rofi`, `dmenu`, `wofi`, or `fuzzel`)
 
 To remove the setup:
 ```bash
@@ -73,6 +73,12 @@ clipboard-manager pick
 (or just `clipboard-manager` without arguments)
 
 Use arrow keys to navigate and **Enter** to select. The item will be copied to your clipboard.
+
+### 4. Popup Picker (lightweight, no terminal)
+```bash
+clipboard-manager popup
+```
+Opens a lightweight popup window (like Windows' Win+V) using rofi/dmenu/wofi/fuzzel. This is what **Super+V** uses after running `setup`.
 
 ### Platform Notes
 

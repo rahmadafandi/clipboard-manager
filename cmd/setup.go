@@ -10,6 +10,11 @@ var setupCmd = &cobra.Command{
 	Use:   "setup",
 	Short: "Setup autostart and Super+V global shortcut",
 	Run: func(cmd *cobra.Command, args []string) {
+		if err := installDependencies(); err != nil {
+			fmt.Println("Failed to install dependencies:", err)
+			return
+		}
+
 		if err := setupAutostart(); err != nil {
 			fmt.Println("Failed to setup autostart:", err)
 			return
