@@ -12,16 +12,24 @@ import (
 	"strings"
 )
 
-// requiredPkgs lists the packages needed for the popup picker and notifications.
-var requiredPkgs = []struct {
-	bin     string // binary to check in PATH
-	aptPkg  string
-	dnfPkg  string
-	pacPkg  string
-	zypper  string
-}{
-	{"rofi", "rofi", "rofi", "rofi", "rofi"},
-	{"notify-send", "libnotify-bin", "libnotify", "libnotify", "libnotify-tools"},
+type pkgInfo struct {
+	bin    string // binary to check in PATH
+	aptPkg string
+	dnfPkg string
+	pacPkg string
+	zypper string
+}
+
+func requiredPkgs() []pkgInfo {
+	// Pick the right launcher based on display server
+	launcherPkg := pkgInfo{"rofi", "rofi", "rofi", "rofi", "rofi"}
+	if os.Getenv("WAYLAND_DISPLAY") != "" {
+		launcherPkg = pkgInfo{"wofi", "wofi", "wofi", "wofi", "wofi"}
+	}
+	return []pkgInfo{
+		launcherPkg,
+		{"notify-send", "libnotify-bin", "libnotify", "libnotify", "libnotify-tools"},
+	}
 }
 
 func detectPkgManager() (name string, installCmd []string) {
@@ -43,13 +51,7 @@ func detectPkgManager() (name string, installCmd []string) {
 	return "", nil
 }
 
-func pkgNameForManager(pkg struct {
-	bin     string
-	aptPkg  string
-	dnfPkg  string
-	pacPkg  string
-	zypper  string
-}, manager string) string {
+func pkgNameForManager(pkg pkgInfo, manager string) string {
 	switch manager {
 	case "apt":
 		return pkg.aptPkg
@@ -64,15 +66,9 @@ func pkgNameForManager(pkg struct {
 }
 
 func installDependencies() error {
-	var missing []struct {
-		bin     string
-		aptPkg  string
-		dnfPkg  string
-		pacPkg  string
-		zypper  string
-	}
+	var missing []pkgInfo
 
-	for _, pkg := range requiredPkgs {
+	for _, pkg := range requiredPkgs() {
 		if _, err := exec.LookPath(pkg.bin); err != nil {
 			missing = append(missing, pkg)
 		}
@@ -192,9 +188,10 @@ func findExistingBinding() string {
 	re := regexp.MustCompile(`'([^']+)'`)
 	matches := re.FindAllStringSubmatch(raw, -1)
 	for _, m := range matches {
-		path := m[1]
+		path := strings.TrimSuffix(m[1], "/")
+		dconf := path + "/"
 		nameOut, err := exec.Command("gsettings", "get",
-			gsettingsBindingSchema+":"+path+"/", "name").Output()
+			gsettingsBindingSchema+":"+dconf, "name").Output()
 		if err == nil && strings.Contains(string(nameOut), "Clipboard Manager") {
 			return path
 		}

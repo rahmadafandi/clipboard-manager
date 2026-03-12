@@ -17,10 +17,24 @@ type launcher struct {
 	args func() []string
 }
 
-var launchers = []launcher{
+var waylandLaunchers = []launcher{
+	{"wofi", func() []string {
+		return []string{"--dmenu", "-i", "-p", "Clipboard", "--lines", "10"}
+	}},
+	{"fuzzel", func() []string {
+		return []string{"--dmenu", "--prompt", "Clipboard > ", "--lines", "10"}
+	}},
 	{"rofi", func() []string {
-		return []string{"-dmenu", "-i", "-p", "Clipboard", "-format", "i",
-			"-theme-str", "window {width: 400px;} listview {lines: 10;}"}
+		return rofiArgs()
+	}},
+	{"dmenu", func() []string {
+		return []string{"-i", "-l", "10", "-p", "Clipboard"}
+	}},
+}
+
+var x11Launchers = []launcher{
+	{"rofi", func() []string {
+		return rofiArgs()
 	}},
 	{"dmenu", func() []string {
 		return []string{"-i", "-l", "10", "-p", "Clipboard"}
@@ -33,13 +47,36 @@ var launchers = []launcher{
 	}},
 }
 
+func rofiArgs() []string {
+	return []string{
+		"-dmenu", "-i", "-p", "Clipboard", "-format", "i",
+		"-hover-select",
+		"-me-select-entry", "",
+		"-me-accept-entry", "MousePrimary",
+		"-kb-accept-entry", "Return",
+		"-theme-str", "window {width: 400px;} listview {lines: 10;}",
+	}
+}
+
+func isWayland() bool {
+	return os.Getenv("WAYLAND_DISPLAY") != ""
+}
+
 func detectLauncher() (*launcher, error) {
-	for i := range launchers {
-		if _, err := exec.LookPath(launchers[i].bin); err == nil {
-			return &launchers[i], nil
+	list := x11Launchers
+	if isWayland() {
+		list = waylandLaunchers
+	}
+	for i := range list {
+		if _, err := exec.LookPath(list[i].bin); err == nil {
+			return &list[i], nil
 		}
 	}
-	return nil, fmt.Errorf("no supported launcher found (install rofi, dmenu, wofi, or fuzzel)")
+	hint := "rofi, dmenu, wofi, or fuzzel"
+	if isWayland() {
+		hint = "wofi, fuzzel, or rofi-wayland"
+	}
+	return nil, fmt.Errorf("no supported launcher found (install %s)", hint)
 }
 
 var popupCmd = &cobra.Command{
