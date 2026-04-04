@@ -5,6 +5,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 )
 
@@ -26,6 +27,24 @@ const launchAgentPlist = `<?xml version="1.0" encoding="UTF-8"?>
 `
 
 func installDependencies() error {
+	if _, err := exec.LookPath("choose"); err == nil {
+		return nil
+	}
+
+	if _, err := exec.LookPath("brew"); err != nil {
+		fmt.Println("  Homebrew not found. Please install choose-gui manually:")
+		fmt.Println("    brew install choose-gui")
+		return nil
+	}
+
+	fmt.Println("Installing choose-gui via Homebrew...")
+	cmd := exec.Command("brew", "install", "choose-gui")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to install choose-gui: %w", err)
+	}
+	fmt.Println("✔ Dependencies installed")
 	return nil
 }
 
@@ -34,8 +53,13 @@ func isSetupDone() bool {
 	if err != nil {
 		return false
 	}
-	_, err = os.Stat(path)
-	return err == nil
+	if _, err := os.Stat(path); err != nil {
+		return false
+	}
+	if _, err := exec.LookPath("choose"); err != nil {
+		return false
+	}
+	return true
 }
 
 func getLaunchAgentPath() (string, error) {
