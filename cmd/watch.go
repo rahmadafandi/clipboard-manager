@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rahmadafandi/clipboard-manager/internal/config"
 	"github.com/rahmadafandi/clipboard-manager/internal/storage"
 	"github.com/spf13/cobra"
 	"golang.design/x/clipboard"
@@ -15,7 +16,9 @@ var watchCmd = &cobra.Command{
 	Short: "Watch clipboard for changes",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("Starting clipboard watcher...")
-		
+
+		cfg, _ := config.Load()
+
 		err := clipboard.Init()
 		if err != nil {
 			panic(err)
@@ -28,8 +31,26 @@ var watchCmd = &cobra.Command{
 
 		chText := clipboard.Watch(context.Background(), clipboard.FmtText)
 		chImage := clipboard.Watch(context.Background(), clipboard.FmtImage)
-		
+
 		fmt.Printf("Saving history to: %s\n", s.FilePath)
+		fmt.Printf("Max history: %d\n", cfg.MaxHistory)
+		if cfg.AutoExpireHours > 0 {
+			fmt.Printf("Auto-expire: %d hours\n", cfg.AutoExpireHours)
+		}
+
+		// Purge expired items on startup
+		s.PurgeExpired()
+
+		// Periodic expiry check
+		if cfg.AutoExpireHours > 0 {
+			go func() {
+				ticker := time.NewTicker(10 * time.Minute)
+				defer ticker.Stop()
+				for range ticker.C {
+					s.PurgeExpired()
+				}
+			}()
+		}
 
 		for {
 			select {
@@ -39,37 +60,27 @@ var watchCmd = &cobra.Command{
 					continue
 				}
 				fmt.Println("Detected text copy")
-				
-				// Read current items to check duplicate
-				items, _ := s.Load()
-				if len(items) > 0 {
-					last := items[len(items)-1]
-					if last.Type == storage.Text && last.TextContent == text {
-						continue
-					}
-				}
-				
-				items = append(items, storage.ClipItem{
+
+				item := storage.ClipItem{
 					Type:        storage.Text,
 					TextContent: text,
 					Timestamp:   time.Now(),
-				})
-				
-				// Limit
-				if len(items) > 50 {
-					items = items[len(items)-50:]
 				}
-				
-				s.Save(items)
+
+				if cfg.AutoExpireHours > 0 {
+					exp := time.Now().Add(time.Duration(cfg.AutoExpireHours) * time.Hour)
+					item.ExpiresAt = &exp
+				}
+
+				s.AppendWithLimit(item, cfg.MaxHistory)
 
 			case data := <-chImage:
 				if len(data) == 0 {
 					continue
 				}
 				fmt.Println("Detected image copy")
-				
+
 				items, _ := s.Load()
-				// Simple duplicate check (length comparison for now to be fast)
 				if len(items) > 0 {
 					last := items[len(items)-1]
 					if last.Type == storage.Image && len(last.ImageData) == len(data) {
@@ -77,16 +88,21 @@ var watchCmd = &cobra.Command{
 					}
 				}
 
-				items = append(items, storage.ClipItem{
+				item := storage.ClipItem{
 					Type:      storage.Image,
 					ImageData: data,
 					Timestamp: time.Now(),
-				})
-				
-				if len(items) > 50 {
-					items = items[len(items)-50:]
 				}
-				
+
+				if cfg.AutoExpireHours > 0 {
+					exp := time.Now().Add(time.Duration(cfg.AutoExpireHours) * time.Hour)
+					item.ExpiresAt = &exp
+				}
+
+				items = append(items, item)
+				if len(items) > cfg.MaxHistory {
+					items = items[len(items)-cfg.MaxHistory:]
+				}
 				s.Save(items)
 			}
 		}

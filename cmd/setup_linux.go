@@ -121,6 +121,62 @@ func installDependencies() error {
 	return nil
 }
 
+const systemdService = `[Unit]
+Description=Clipboard Manager Watcher
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%s watch
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+`
+
+func setupSystemdService() error {
+	exe, err := getExePath()
+	if err != nil {
+		return err
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+
+	dir := filepath.Join(home, ".config", "systemd", "user")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	path := filepath.Join(dir, "clipboard-manager.service")
+	content := fmt.Sprintf(systemdService, exe)
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return err
+	}
+
+	// Reload and enable
+	exec.Command("systemctl", "--user", "daemon-reload").Run()
+	exec.Command("systemctl", "--user", "enable", "clipboard-manager.service").Run()
+	exec.Command("systemctl", "--user", "start", "clipboard-manager.service").Run()
+	return nil
+}
+
+func removeSystemdService() {
+	exec.Command("systemctl", "--user", "stop", "clipboard-manager.service").Run()
+	exec.Command("systemctl", "--user", "disable", "clipboard-manager.service").Run()
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	path := filepath.Join(home, ".config", "systemd", "user", "clipboard-manager.service")
+	os.Remove(path)
+	exec.Command("systemctl", "--user", "daemon-reload").Run()
+}
+
 const autostartDesktop = `[Desktop Entry]
 Type=Application
 Name=Clipboard Manager
@@ -170,7 +226,20 @@ func setupAutostart() error {
 	}
 
 	content := fmt.Sprintf(autostartDesktop, exe)
-	return os.WriteFile(path, []byte(content), 0644)
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return err
+	}
+
+	// Also setup systemd user service if systemctl is available
+	if _, err := exec.LookPath("systemctl"); err == nil {
+		if err := setupSystemdService(); err != nil {
+			fmt.Println("  Warning: systemd service setup failed:", err)
+		} else {
+			fmt.Println("✔ Systemd user service enabled")
+		}
+	}
+
+	return nil
 }
 
 func isSetupDone() bool {
@@ -191,6 +260,8 @@ func isSetupDone() bool {
 }
 
 func removeAutostart() error {
+	removeSystemdService()
+
 	path, err := getAutostartPath()
 	if err != nil {
 		return err

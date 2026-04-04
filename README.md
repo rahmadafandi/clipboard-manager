@@ -1,96 +1,118 @@
 # Go Clipboard Manager (CLI)
 
-A lightweight CLI clipboard manager built with Cobra and Bubbletea.
+A lightweight cross-platform clipboard manager built with Go.
 
 ## Features
-- **Watcher**: Daemon that records clipboard history.
-- **Picker**: Interactive TUI to select and paste items.
-- **Daemon Control**: Built-in `start` and `stop` commands.
-- **Storage**: JSON file in user cache.
+- **Clipboard Watcher**: Background daemon that records clipboard history (text & images)
+- **Popup Picker**: Lightweight popup (Super+V) via wofi/rofi (Linux), choose (macOS), PowerShell (Windows)
+- **TUI Picker**: Interactive terminal UI with search, delete, and pin
+- **Pin Items**: Pin frequently used items so they stay at the top
+- **Auto-expire**: Automatically remove old clipboard entries
+- **Snippets**: Save and recall permanent text snippets
+- **Configurable**: Max history size, auto-expire, preview settings
+- **Auto-setup**: One command installs dependencies, autostart, and keybinding
+- **Systemd Service**: Optional systemd user service on Linux
+- **Cross-platform**: Linux, macOS, Windows
 
 ## Installation
-
-### Option 1: Go Install (Recommended)
-You can install the tool directly to your `$GOPATH/bin` (make sure it's in your `$PATH`):
 
 ```bash
 go install github.com/rahmadafandi/clipboard-manager@latest
 ```
 
-### Option 2: Build from Source
-
-#### Linux / macOS
+Or build from source:
 ```bash
 git clone https://github.com/rahmadafandi/clipboard-manager.git
 cd clipboard-manager
-go mod tidy
 go build -o clipboard-manager
 ```
 
-#### Windows (PowerShell)
-```powershell
-git clone https://github.com/rahmadafandi/clipboard-manager.git
-cd clipboard-manager
-go mod tidy
-go build -o clipboard-manager.exe
-```
-
 ## Quick Setup
-
-Run the setup command to automatically configure **autostart on login** and **Super+V global shortcut**:
-
-```bash
-clipboard-manager setup
-```
-
-This will:
-- Register the watcher daemon to start automatically on login
-- Bind **Super+V** to open a lightweight popup picker (Linux/GNOME only, requires `rofi`, `dmenu`, `wofi`, or `fuzzel`)
-
-To remove the setup:
-```bash
-clipboard-manager unsetup
-```
-
-## Usage
-
-### 1. Start the Watcher
-Start the background recording process:
 
 ```bash
 clipboard-manager start
 ```
 
-### 2. Stop the Watcher
-```bash
-clipboard-manager stop
-```
+On first run, this automatically:
+- Installs dependencies (wofi/rofi, wl-clipboard, etc.)
+- Configures autostart on login
+- Binds **Super+V** to the popup picker (Linux/GNOME)
+- Enables systemd user service (Linux, if available)
 
-### 3. Select from History
-```bash
-clipboard-manager pick
-```
-(or just `clipboard-manager` without arguments)
+To remove: `clipboard-manager unsetup`
 
-Use arrow keys to navigate and **Enter** to select. The item will be copied to your clipboard.
+## Usage
 
-### 4. Popup Picker (lightweight, no terminal)
+### Popup Picker (Super+V)
 ```bash
 clipboard-manager popup
 ```
-Opens a lightweight popup window (like Windows' Win+V) using rofi/dmenu/wofi/fuzzel. This is what **Super+V** uses after running `setup`.
+Lightweight popup — pinned items shown first, image previews supported.
 
-### Platform Notes
-
-#### Linux (GNOME)
-`setup` fully supports autostart and Super+V keybinding via gsettings.
-
-#### macOS
-`setup` configures autostart via LaunchAgent. For the global shortcut, use Automator to create a Quick Action:
+### TUI Picker
 ```bash
-open -a Terminal /path/to/clipboard-manager --args pick
+clipboard-manager pick
 ```
-Then bind it in System Settings → Keyboard → Shortcuts.
+| Key | Action |
+|-----|--------|
+| Arrow keys | Navigate |
+| Enter | Copy to clipboard |
+| d / Delete | Delete item |
+| p | Pin / unpin item |
+| q / Ctrl+C | Quit |
 
-#### Windows
-`setup` configures autostart via the Startup folder. For the global shortcut, create a shortcut to `clipboard-manager.exe`, right-click → Properties → set Shortcut Key.
+### Daemon Control
+```bash
+clipboard-manager start    # Start watcher (auto-setup on first run)
+clipboard-manager stop     # Stop watcher
+```
+
+### Clear History
+```bash
+clipboard-manager clear        # Clear history (keeps pinned)
+clipboard-manager clear --all  # Clear everything
+```
+
+### Snippets
+```bash
+clipboard-manager snippet add myemail user@example.com
+clipboard-manager snippet list
+clipboard-manager snippet copy myemail
+clipboard-manager snippet remove myemail
+```
+
+### Version
+```bash
+clipboard-manager --version
+```
+
+## Configuration
+
+Config file: `~/.config/clipboard-manager/config.json`
+
+```json
+{
+  "max_history": 50,
+  "auto_expire_hours": 0,
+  "preview_lines": 1,
+  "preview_width": 80
+}
+```
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `max_history` | 50 | Maximum number of clipboard items to keep |
+| `auto_expire_hours` | 0 | Auto-delete items after N hours (0 = disabled) |
+| `preview_lines` | 1 | Lines to show in popup preview |
+| `preview_width` | 80 | Characters per line in preview |
+
+## Platform Support
+
+| Feature | Linux | macOS | Windows |
+|---------|-------|-------|---------|
+| Popup picker | wofi/rofi/dmenu/fuzzel | choose-gui (brew) | PowerShell WinForms |
+| Image preview | wofi/rofi | - | - |
+| Image clipboard persist | wl-copy / xclip | osascript | Native |
+| Autostart | .desktop + systemd | LaunchAgent | Startup folder |
+| Global shortcut | gsettings (GNOME) | Manual (Automator) | Manual (shortcut key) |
+| Auto-install deps | pkexec / sudo | brew | Not needed |

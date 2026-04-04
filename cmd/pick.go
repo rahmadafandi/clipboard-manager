@@ -16,7 +16,8 @@ import (
 var docStyle = lipgloss.NewStyle().Margin(1, 2)
 
 type itemWrapper struct {
-	item storage.ClipItem
+	item     storage.ClipItem
+	origIdx  int // original index in storage (for delete/pin)
 }
 
 func (i itemWrapper) FilterValue() string {
@@ -27,22 +28,28 @@ func (i itemWrapper) FilterValue() string {
 }
 
 func (i itemWrapper) Title() string {
+	prefix := ""
+	if i.item.Pinned {
+		prefix = "[*] "
+	}
 	if i.item.Type == storage.Text {
-		// Truncate for display
 		content := i.item.TextContent
 		if len(content) > 50 {
 			content = content[:50] + "..."
 		}
-		return content
+		return prefix + content
 	}
-	return fmt.Sprintf("[Image] %d bytes", len(i.item.ImageData))
+	return fmt.Sprintf("%s[Image] %d bytes", prefix, len(i.item.ImageData))
 }
 
 func (i itemWrapper) Description() string {
-	return i.item.Timestamp.Format("15:04:05")
+	ts := i.item.Timestamp.Format("15:04:05")
+	if i.item.Pinned {
+		ts += " (pinned)"
+	}
+	return ts
 }
 
-// Delegate to render items
 type delegate struct{}
 
 func (d delegate) Height() int                               { return 1 }
@@ -55,7 +62,7 @@ func (d delegate) Render(w io.Writer, m list.Model, index int, listItem list.Ite
 	}
 
 	str := fmt.Sprintf("%d. %s", index+1, i.Title())
-	
+
 	fn := itemStyle.Render
 	if index == m.Index() {
 		fn = func(s ...string) string {
@@ -69,6 +76,7 @@ func (d delegate) Render(w io.Writer, m list.Model, index int, listItem list.Ite
 var (
 	itemStyle         = lipgloss.NewStyle().PaddingLeft(4)
 	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("170"))
+	helpStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).MarginLeft(2)
 )
 
 var pickCmd = &cobra.Command{
@@ -80,7 +88,7 @@ var pickCmd = &cobra.Command{
 			fmt.Println("Error accessing storage:", err)
 			return
 		}
-		
+
 		items, err := s.Load()
 		if err != nil {
 			fmt.Println("Error loading history:", err)
@@ -95,14 +103,13 @@ var pickCmd = &cobra.Command{
 		// Reverse items to show newest first
 		var teaItems []list.Item
 		for i := len(items) - 1; i >= 0; i-- {
-			teaItems = append(teaItems, itemWrapper{items[i]})
+			teaItems = append(teaItems, itemWrapper{item: items[i], origIdx: i})
 		}
-		
-		// Use default delegate for simplicity first
+
 		l := list.New(teaItems, list.NewDefaultDelegate(), 0, 0)
 		l.Title = "Clipboard History"
 
-		m := model{list: l}
+		m := pickModel{list: l, storage: s}
 
 		p := tea.NewProgram(m, tea.WithAltScreen())
 		if _, err := p.Run(); err != nil {
@@ -112,35 +119,27 @@ var pickCmd = &cobra.Command{
 	},
 }
 
-type model struct {
-	list list.Model
-	choice *storage.ClipItem
+type pickModel struct {
+	list    list.Model
+	storage *storage.FileStorage
 }
 
-func (m model) Init() tea.Cmd {
+func (m pickModel) Init() tea.Cmd {
 	return nil
 }
 
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m pickModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		if msg.String() == "ctrl+c" {
+		switch msg.String() {
+		case "ctrl+c", "q":
 			return m, tea.Quit
-		}
-		if msg.String() == "enter" {
+
+		case "enter":
 			i, ok := m.list.SelectedItem().(itemWrapper)
 			if ok {
-				m.choice = &i.item
-				
-				// Paste logic
-				// Note: clipboard write requires Init()
-				// We do it here or in main
-				// But Init() might stick the thread. 
-				// The clipboard lib is a bit tricky with threads. 
-				// Ensure we Init in the main function before running any command if possible, 
-				// or just do it here.
 				err := clipboard.Init()
-				if err == nil { // Ignore if already init
+				if err == nil {
 					if i.item.Type == storage.Text {
 						clipboard.Write(clipboard.FmtText, []byte(i.item.TextContent))
 					} else {
@@ -149,7 +148,35 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			return m, tea.Quit
+
+		case "d", "delete":
+			i, ok := m.list.SelectedItem().(itemWrapper)
+			if ok {
+				m.storage.Delete(i.origIdx)
+				// Reload list
+				return m, m.reloadItems()
+			}
+
+		case "p":
+			i, ok := m.list.SelectedItem().(itemWrapper)
+			if ok {
+				m.storage.TogglePin(i.origIdx)
+				return m, m.reloadItems()
+			}
 		}
+
+	case reloadMsg:
+		items, err := m.storage.Load()
+		if err != nil || len(items) == 0 {
+			return m, tea.Quit
+		}
+		var teaItems []list.Item
+		for i := len(items) - 1; i >= 0; i-- {
+			teaItems = append(teaItems, itemWrapper{item: items[i], origIdx: i})
+		}
+		m.list.SetItems(teaItems)
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		h, v := docStyle.GetFrameSize()
 		m.list.SetSize(msg.Width-h, msg.Height-v)
@@ -160,6 +187,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m model) View() string {
-	return docStyle.Render(m.list.View())
+type reloadMsg struct{}
+
+func (m pickModel) reloadItems() tea.Cmd {
+	return func() tea.Msg {
+		return reloadMsg{}
+	}
+}
+
+func (m pickModel) View() string {
+	help := helpStyle.Render("enter: copy • d: delete • p: pin/unpin • q: quit")
+	return docStyle.Render(m.list.View()) + "\n" + help
 }

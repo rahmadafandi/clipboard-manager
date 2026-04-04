@@ -21,14 +21,44 @@ type launcher struct {
 }
 
 func defaultFmtLine(idx int, item storage.ClipItem, imgPath string) string {
+	pin := ""
+	if item.Pinned {
+		pin = "[*] "
+	}
 	if item.Type == storage.Text {
 		preview := strings.ReplaceAll(item.TextContent, "\n", " ")
 		if len(preview) > 80 {
 			preview = preview[:80] + "..."
 		}
-		return fmt.Sprintf("%d. %s", idx+1, preview)
+		return fmt.Sprintf("%d. %s%s", idx+1, pin, preview)
 	}
-	return fmt.Sprintf("%d. [Image] %d bytes", idx+1, len(item.ImageData))
+	return fmt.Sprintf("%d. %s[Image] %d bytes", idx+1, pin, len(item.ImageData))
+}
+
+// sortPinnedFirst returns items sorted with pinned items first, then newest first.
+func sortPinnedFirst(items []storage.ClipItem) (sorted []storage.ClipItem, origIndices []int) {
+	// Reverse (newest first)
+	reversed := make([]storage.ClipItem, len(items))
+	revIndices := make([]int, len(items))
+	for i, item := range items {
+		reversed[len(items)-1-i] = item
+		revIndices[len(items)-1-i] = i
+	}
+
+	// Pinned first
+	for i, item := range reversed {
+		if item.Pinned {
+			sorted = append(sorted, item)
+			origIndices = append(origIndices, revIndices[i])
+		}
+	}
+	for i, item := range reversed {
+		if !item.Pinned {
+			sorted = append(sorted, item)
+			origIndices = append(origIndices, revIndices[i])
+		}
+	}
+	return
 }
 
 func parseIdxFromNumber(output string) (int, bool) {
@@ -95,27 +125,32 @@ var popupCmd = &cobra.Command{
 			return
 		}
 
+		// Purge expired items first
+		s.PurgeExpired()
+		items, err = s.Load()
+		if err != nil || len(items) == 0 {
+			showNotification("Clipboard history is empty")
+			return
+		}
+
 		l, err := detectLauncher()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 
-		// Reverse items (newest first)
-		reversed := make([]storage.ClipItem, len(items))
-		for i, item := range items {
-			reversed[len(items)-1-i] = item
-		}
+		// Sort: pinned first, then newest first
+		sorted, _ := sortPinnedFirst(items)
 
 		// Save image thumbnails to temp files
-		tmpDir, imgPaths := saveImageThumbs(reversed)
+		tmpDir, imgPaths := saveImageThumbs(sorted)
 		if tmpDir != "" {
 			defer os.RemoveAll(tmpDir)
 		}
 
 		// Build display lines with image paths
 		var lines []string
-		for i, item := range reversed {
+		for i, item := range sorted {
 			lines = append(lines, l.fmtLine(i, item, imgPaths[i]))
 		}
 
@@ -144,11 +179,11 @@ var popupCmd = &cobra.Command{
 		}
 
 		idx, ok := l.parseIdx(result)
-		if !ok || idx < 0 || idx >= len(reversed) {
+		if !ok || idx < 0 || idx >= len(sorted) {
 			return
 		}
 
-		selected := reversed[idx]
+		selected := sorted[idx]
 
 		if selected.Type == storage.Text {
 			writeTextToClipboard(selected.TextContent)
