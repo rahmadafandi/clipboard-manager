@@ -91,6 +91,8 @@ func saveImageThumbs(items []storage.ClipItem) (tmpDir string, paths map[int]str
 	return tmpDir, paths
 }
 
+var popupPaste bool
+
 var popupCmd = &cobra.Command{
 	Use:   "popup",
 	Short: "Pick from clipboard history using a lightweight popup",
@@ -174,14 +176,23 @@ var popupCmd = &cobra.Command{
 
 		if selected.Type == storage.Text {
 			writeTextToClipboard(selected.TextContent)
-			showNotification("Copied to clipboard")
 		} else {
 			writeImageToClipboard(selected.ImageData)
-			showNotification("Image copied to clipboard")
+		}
+
+		if popupPaste {
+			autoPaste()
+		} else {
+			if selected.Type == storage.Text {
+				showNotification("Copied to clipboard")
+			} else {
+				showNotification("Image copied to clipboard")
+			}
 		}
 	},
 }
 
 func init() {
+	popupCmd.Flags().BoolVar(&popupPaste, "paste", false, "Auto-paste after selecting (simulate Ctrl+V)")
 	rootCmd.AddCommand(popupCmd)
 }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/rahmadafandi/clipboard-manager/internal/config"
+	"github.com/rahmadafandi/clipboard-manager/internal/sensitive"
 	"github.com/rahmadafandi/clipboard-manager/internal/storage"
 	"github.com/spf13/cobra"
 	"golang.design/x/clipboard"
@@ -61,15 +62,22 @@ var watchCmd = &cobra.Command{
 				if text == "" {
 					continue
 				}
-				fmt.Println("Detected text copy")
 				item := storage.ClipItem{
 					Type:        storage.Text,
 					TextContent: text,
 					Timestamp:   time.Now(),
 				}
-				if cfg.AutoExpireHours > 0 {
-					exp := time.Now().Add(time.Duration(cfg.AutoExpireHours) * time.Hour)
+
+				if sensitive.IsSensitive(text) {
+					fmt.Println("Detected sensitive text copy (auto-expires in 1 min)")
+					exp := time.Now().Add(1 * time.Minute)
 					item.ExpiresAt = &exp
+				} else {
+					fmt.Println("Detected text copy")
+					if cfg.AutoExpireHours > 0 {
+						exp := time.Now().Add(time.Duration(cfg.AutoExpireHours) * time.Hour)
+						item.ExpiresAt = &exp
+					}
 				}
 				if err := s.AppendWithLimit(item, cfg.MaxHistory); err != nil {
 					fmt.Println("Error saving:", err)
