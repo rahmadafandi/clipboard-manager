@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -333,19 +334,65 @@ var popupCmd = &cobra.Command{
 
 		selected := reversed[idx]
 
-		if err := clipboard.Init(); err != nil {
-			fmt.Fprintln(os.Stderr, "Clipboard error:", err)
-			os.Exit(1)
-		}
-
 		if selected.Type == storage.Text {
-			clipboard.Write(clipboard.FmtText, []byte(selected.TextContent))
+			writeTextToClipboard(selected.TextContent)
 			showNotification("Copied to clipboard")
 		} else {
-			clipboard.Write(clipboard.FmtImage, selected.ImageData)
+			writeImageToClipboard(selected.ImageData)
 			showNotification("Image copied to clipboard")
 		}
 	},
+}
+
+// writeTextToClipboard writes text using native tools, fallback to clipboard lib.
+func writeTextToClipboard(text string) {
+	if isWayland() {
+		if bin, err := exec.LookPath("wl-copy"); err == nil {
+			cmd := exec.Command(bin)
+			cmd.Stdin = strings.NewReader(text)
+			if cmd.Run() == nil {
+				return
+			}
+		}
+	} else {
+		if bin, err := exec.LookPath("xclip"); err == nil {
+			cmd := exec.Command(bin, "-selection", "clipboard")
+			cmd.Stdin = strings.NewReader(text)
+			if cmd.Run() == nil {
+				return
+			}
+		}
+	}
+	// Fallback
+	if err := clipboard.Init(); err == nil {
+		clipboard.Write(clipboard.FmtText, []byte(text))
+	}
+}
+
+// writeImageToClipboard writes image data using wl-copy/xclip so clipboard
+// persists after the process exits.
+func writeImageToClipboard(data []byte) {
+	if isWayland() {
+		if bin, err := exec.LookPath("wl-copy"); err == nil {
+			cmd := exec.Command(bin, "--type", "image/png")
+			cmd.Stdin = bytes.NewReader(data)
+			if cmd.Run() == nil {
+				return
+			}
+		}
+	} else {
+		if bin, err := exec.LookPath("xclip"); err == nil {
+			cmd := exec.Command(bin, "-selection", "clipboard", "-t", "image/png", "-i")
+			cmd.Stdin = bytes.NewReader(data)
+			if cmd.Run() == nil {
+				return
+			}
+		}
+	}
+	// Fallback: clipboard lib (image may not persist after exit)
+	if err := clipboard.Init(); err == nil {
+		clipboard.Write(clipboard.FmtImage, data)
+	}
 }
 
 func showNotification(msg string) {

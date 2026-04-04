@@ -23,11 +23,14 @@ type pkgInfo struct {
 func requiredPkgs() []pkgInfo {
 	// Pick the right launcher based on display server
 	launcherPkg := pkgInfo{"rofi", "rofi", "rofi", "rofi", "rofi"}
+	clipPkg := pkgInfo{"xclip", "xclip", "xclip", "xclip", "xclip"}
 	if os.Getenv("WAYLAND_DISPLAY") != "" {
 		launcherPkg = pkgInfo{"wofi", "wofi", "wofi", "wofi", "wofi"}
+		clipPkg = pkgInfo{"wl-copy", "wl-clipboard", "wl-clipboard", "wl-clipboard", "wl-clipboard"}
 	}
 	return []pkgInfo{
 		launcherPkg,
+		clipPkg,
 		{"notify-send", "libnotify-bin", "libnotify", "libnotify", "libnotify-tools"},
 	}
 }
