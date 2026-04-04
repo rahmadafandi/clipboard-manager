@@ -12,6 +12,15 @@ func installDependencies() error {
 	return nil
 }
 
+func isSetupDone() bool {
+	path, err := getStartupPath()
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(path)
+	return err == nil
+}
+
 func getStartupPath() (string, error) {
 	appData := os.Getenv("APPDATA")
 	if appData == "" {

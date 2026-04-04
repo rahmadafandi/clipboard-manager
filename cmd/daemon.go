@@ -27,6 +27,25 @@ var startCmd = &cobra.Command{
 	Use:   "start",
 	Short: "Start the clipboard watcher daemon",
 	Run: func(cmd *cobra.Command, args []string) {
+		// Auto-setup on first run
+		if !isSetupDone() {
+			fmt.Println("First run detected, running setup...")
+			if err := installDependencies(); err != nil {
+				fmt.Println("Failed to install dependencies:", err)
+				return
+			}
+			if err := setupAutostart(); err != nil {
+				fmt.Println("Warning: autostart setup failed:", err)
+			} else {
+				fmt.Println("✔ Autostart configured")
+			}
+			if err := setupKeybinding(); err != nil {
+				fmt.Println("Warning: keybinding setup failed:", err)
+			} else {
+				fmt.Println("✔ Global shortcut Super+V configured")
+			}
+		}
+
 		pidFile, err := getPidFilePath()
 		if err != nil {
 			fmt.Println("Error getting pid file path:", err)

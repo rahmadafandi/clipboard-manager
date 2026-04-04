@@ -161,6 +161,15 @@ func setupAutostart() error {
 	return os.WriteFile(path, []byte(content), 0644)
 }
 
+func isSetupDone() bool {
+	path, err := getAutostartPath()
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(path)
+	return err == nil
+}
+
 func removeAutostart() error {
 	path, err := getAutostartPath()
 	if err != nil {

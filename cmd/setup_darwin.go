@@ -29,6 +29,15 @@ func installDependencies() error {
 	return nil
 }
 
+func isSetupDone() bool {
+	path, err := getLaunchAgentPath()
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(path)
+	return err == nil
+}
+
 func getLaunchAgentPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
