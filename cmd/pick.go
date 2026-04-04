@@ -3,6 +3,8 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -12,7 +14,132 @@ import (
 	"golang.design/x/clipboard"
 )
 
+var (
+	pickTUI   bool
+	pickPaste bool
+)
+
+var pickCmd = &cobra.Command{
+	Use:   "pick",
+	Short: "Pick an item from clipboard history",
+	Long:  `Opens a popup picker by default. Use --tui for terminal UI mode.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		if pickTUI {
+			runTUI()
+			return
+		}
+
+		// Try popup first, fall back to TUI
+		if _, err := detectLauncher(); err == nil {
+			runPopup()
+		} else {
+			runTUI()
+		}
+	},
+}
+
+func init() {
+	pickCmd.Flags().BoolVar(&pickTUI, "tui", false, "Force terminal UI mode")
+	pickCmd.Flags().BoolVar(&pickPaste, "paste", false, "Auto-paste after selecting (simulate Ctrl+V)")
+}
+
+// --- Popup mode ---
+
+func runPopup() {
+	s, err := storage.NewFileStorage()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error accessing storage:", err)
+		os.Exit(1)
+	}
+
+	items, err := s.Load()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error loading history:", err)
+		os.Exit(1)
+	}
+
+	if len(items) == 0 {
+		showNotification("Clipboard history is empty")
+		return
+	}
+
+	s.PurgeExpired()
+
+	items, err = s.Load()
+	if err != nil || len(items) == 0 {
+		showNotification("Clipboard history is empty")
+		return
+	}
+
+	l, err := detectLauncher()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	sorted := sortPinnedFirst(items)
+
+	tmpDir, imgPaths := saveImageThumbs(sorted)
+	if tmpDir != "" {
+		defer os.RemoveAll(tmpDir)
+	}
+
+	var lines []string
+	for i, item := range sorted {
+		lines = append(lines, l.fmtLine(i, item, imgPaths[i]))
+	}
+
+	input := strings.Join(lines, "\n")
+
+	launcherArgs := l.args()
+	if len(imgPaths) > 0 && l.imgArgs != nil {
+		if extra := l.imgArgs(); len(extra) > 0 {
+			launcherArgs = append(launcherArgs, extra...)
+		}
+	}
+
+	c := exec.Command(l.bin, launcherArgs...)
+	c.Stdin = strings.NewReader(input)
+	c.Stderr = os.Stderr
+
+	out, err := c.Output()
+	if err != nil {
+		return
+	}
+
+	result := strings.TrimSpace(string(out))
+	if result == "" {
+		return
+	}
+
+	idx, ok := l.parseIdx(result)
+	if !ok || idx < 0 || idx >= len(sorted) {
+		return
+	}
+
+	selected := sorted[idx]
+
+	if selected.Type == storage.Text {
+		writeTextToClipboard(selected.TextContent)
+	} else {
+		writeImageToClipboard(selected.ImageData)
+	}
+
+	if pickPaste {
+		autoPaste()
+	} else {
+		if selected.Type == storage.Text {
+			showNotification("Copied to clipboard")
+		} else {
+			showNotification("Image copied to clipboard")
+		}
+	}
+}
+
+// --- TUI mode ---
+
 var docStyle = lipgloss.NewStyle().Margin(1, 2)
+var helpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).MarginLeft(2)
 
 type itemWrapper struct {
 	item    storage.ClipItem
@@ -49,45 +176,39 @@ func (i itemWrapper) Description() string {
 	return ts
 }
 
-var helpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).MarginLeft(2)
+func runTUI() {
+	s, err := storage.NewFileStorage()
+	if err != nil {
+		fmt.Println("Error accessing storage:", err)
+		return
+	}
 
-var pickCmd = &cobra.Command{
-	Use:   "pick",
-	Short: "Pick an item from history",
-	Run: func(cmd *cobra.Command, args []string) {
-		s, err := storage.NewFileStorage()
-		if err != nil {
-			fmt.Println("Error accessing storage:", err)
-			return
-		}
+	items, err := s.Load()
+	if err != nil {
+		fmt.Println("Error loading history:", err)
+		return
+	}
 
-		items, err := s.Load()
-		if err != nil {
-			fmt.Println("Error loading history:", err)
-			return
-		}
+	if len(items) == 0 {
+		fmt.Println("Clipboard history is empty.")
+		return
+	}
 
-		if len(items) == 0 {
-			fmt.Println("Clipboard history is empty.")
-			return
-		}
+	var teaItems []list.Item
+	for i := len(items) - 1; i >= 0; i-- {
+		teaItems = append(teaItems, itemWrapper{item: items[i], origIdx: i})
+	}
 
-		var teaItems []list.Item
-		for i := len(items) - 1; i >= 0; i-- {
-			teaItems = append(teaItems, itemWrapper{item: items[i], origIdx: i})
-		}
+	l := list.New(teaItems, list.NewDefaultDelegate(), 0, 0)
+	l.Title = "Clipboard History"
 
-		l := list.New(teaItems, list.NewDefaultDelegate(), 0, 0)
-		l.Title = "Clipboard History"
+	m := pickModel{list: l, storage: s}
 
-		m := pickModel{list: l, storage: s}
-
-		p := tea.NewProgram(m, tea.WithAltScreen())
-		if _, err := p.Run(); err != nil {
-			fmt.Println("Error running program:", err)
-			os.Exit(1)
-		}
-	},
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		fmt.Println("Error running program:", err)
+		os.Exit(1)
+	}
 }
 
 type pickModel struct {
@@ -95,9 +216,7 @@ type pickModel struct {
 	storage *storage.FileStorage
 }
 
-func (m pickModel) Init() tea.Cmd {
-	return nil
-}
+func (m pickModel) Init() tea.Cmd { return nil }
 
 func (m pickModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -105,7 +224,6 @@ func (m pickModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
-
 		case "enter":
 			i, ok := m.list.SelectedItem().(itemWrapper)
 			if ok {
@@ -118,14 +236,12 @@ func (m pickModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			return m, tea.Quit
-
 		case "d", "delete":
 			i, ok := m.list.SelectedItem().(itemWrapper)
 			if ok {
 				m.storage.Delete(i.origIdx)
 				return m, m.reloadItems()
 			}
-
 		case "p":
 			i, ok := m.list.SelectedItem().(itemWrapper)
 			if ok {
@@ -133,7 +249,6 @@ func (m pickModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.reloadItems()
 			}
 		}
-
 	case reloadMsg:
 		items, err := m.storage.Load()
 		if err != nil || len(items) == 0 {
@@ -145,7 +260,6 @@ func (m pickModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.list.SetItems(teaItems)
 		return m, nil
-
 	case tea.WindowSizeMsg:
 		h, v := docStyle.GetFrameSize()
 		m.list.SetSize(msg.Width-h, msg.Height-v)
@@ -159,9 +273,7 @@ func (m pickModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 type reloadMsg struct{}
 
 func (m pickModel) reloadItems() tea.Cmd {
-	return func() tea.Msg {
-		return reloadMsg{}
-	}
+	return func() tea.Msg { return reloadMsg{} }
 }
 
 func (m pickModel) View() string {

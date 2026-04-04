@@ -6,10 +6,26 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var setupRemove bool
+
 var setupCmd = &cobra.Command{
 	Use:   "setup",
-	Short: "Setup autostart and Super+V global shortcut",
+	Short: "Setup autostart and Super+V global shortcut (--remove to undo)",
 	Run: func(cmd *cobra.Command, args []string) {
+		if setupRemove {
+			if err := removeAutostart(); err != nil {
+				fmt.Println("Failed to remove autostart:", err)
+			} else {
+				fmt.Println("✔ Autostart removed")
+			}
+			if err := removeKeybinding(); err != nil {
+				fmt.Println("Failed to remove keybinding:", err)
+			} else {
+				fmt.Println("✔ Global shortcut removed")
+			}
+			return
+		}
+
 		if err := installDependencies(); err != nil {
 			fmt.Println("Failed to install dependencies:", err)
 			return
@@ -31,25 +47,7 @@ var setupCmd = &cobra.Command{
 	},
 }
 
-var unsetupCmd = &cobra.Command{
-	Use:   "unsetup",
-	Short: "Remove autostart and Super+V global shortcut",
-	Run: func(cmd *cobra.Command, args []string) {
-		if err := removeAutostart(); err != nil {
-			fmt.Println("Failed to remove autostart:", err)
-		} else {
-			fmt.Println("✔ Autostart removed")
-		}
-
-		if err := removeKeybinding(); err != nil {
-			fmt.Println("Failed to remove keybinding:", err)
-		} else {
-			fmt.Println("✔ Global shortcut removed")
-		}
-	},
-}
-
 func init() {
+	setupCmd.Flags().BoolVar(&setupRemove, "remove", false, "Remove autostart and keybinding")
 	rootCmd.AddCommand(setupCmd)
-	rootCmd.AddCommand(unsetupCmd)
 }

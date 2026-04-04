@@ -3,13 +3,11 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/rahmadafandi/clipboard-manager/internal/storage"
-	"github.com/spf13/cobra"
 )
 
 type launcher struct {
@@ -35,7 +33,6 @@ func defaultFmtLine(idx int, item storage.ClipItem, imgPath string) string {
 	return fmt.Sprintf("%d. %s[Image] %d bytes", idx+1, pin, len(item.ImageData))
 }
 
-// sortPinnedFirst returns items with pinned first, then newest first.
 func sortPinnedFirst(items []storage.ClipItem) []storage.ClipItem {
 	var pinned, unpinned []storage.ClipItem
 	for i := len(items) - 1; i >= 0; i-- {
@@ -60,7 +57,6 @@ func parseIdxFromNumber(output string) (int, bool) {
 	return num - 1, true
 }
 
-// saveImageThumbs writes image items to temp PNG files and returns a map of index -> path.
 func saveImageThumbs(items []storage.ClipItem) (tmpDir string, paths map[int]string) {
 	paths = make(map[int]string)
 	hasImages := false
@@ -91,108 +87,3 @@ func saveImageThumbs(items []storage.ClipItem) (tmpDir string, paths map[int]str
 	return tmpDir, paths
 }
 
-var popupPaste bool
-
-var popupCmd = &cobra.Command{
-	Use:   "popup",
-	Short: "Pick from clipboard history using a lightweight popup",
-	Run: func(cmd *cobra.Command, args []string) {
-		s, err := storage.NewFileStorage()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "Error accessing storage:", err)
-			os.Exit(1)
-		}
-
-		items, err := s.Load()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "Error loading history:", err)
-			os.Exit(1)
-		}
-
-		if len(items) == 0 {
-			showNotification("Clipboard history is empty")
-			return
-		}
-
-		s.PurgeExpired()
-
-		// Reload after purge
-		items, err = s.Load()
-		if err != nil || len(items) == 0 {
-			showNotification("Clipboard history is empty")
-			return
-		}
-
-		l, err := detectLauncher()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-
-		sorted := sortPinnedFirst(items)
-
-		// Save image thumbnails to temp files
-		tmpDir, imgPaths := saveImageThumbs(sorted)
-		if tmpDir != "" {
-			defer os.RemoveAll(tmpDir)
-		}
-
-		// Build display lines with image paths
-		var lines []string
-		for i, item := range sorted {
-			lines = append(lines, l.fmtLine(i, item, imgPaths[i]))
-		}
-
-		input := strings.Join(lines, "\n")
-
-		// Build launcher args, add image flags if there are images
-		launcherArgs := l.args()
-		if len(imgPaths) > 0 && l.imgArgs != nil {
-			if extra := l.imgArgs(); len(extra) > 0 {
-				launcherArgs = append(launcherArgs, extra...)
-			}
-		}
-
-		c := exec.Command(l.bin, launcherArgs...)
-		c.Stdin = strings.NewReader(input)
-		c.Stderr = os.Stderr
-
-		out, err := c.Output()
-		if err != nil {
-			return
-		}
-
-		result := strings.TrimSpace(string(out))
-		if result == "" {
-			return
-		}
-
-		idx, ok := l.parseIdx(result)
-		if !ok || idx < 0 || idx >= len(sorted) {
-			return
-		}
-
-		selected := sorted[idx]
-
-		if selected.Type == storage.Text {
-			writeTextToClipboard(selected.TextContent)
-		} else {
-			writeImageToClipboard(selected.ImageData)
-		}
-
-		if popupPaste {
-			autoPaste()
-		} else {
-			if selected.Type == storage.Text {
-				showNotification("Copied to clipboard")
-			} else {
-				showNotification("Image copied to clipboard")
-			}
-		}
-	},
-}
-
-func init() {
-	popupCmd.Flags().BoolVar(&popupPaste, "paste", false, "Auto-paste after selecting (simulate Ctrl+V)")
-	rootCmd.AddCommand(popupCmd)
-}
