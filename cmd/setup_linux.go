@@ -32,16 +32,25 @@ func requiredPkgs() []pkgInfo {
 	}
 }
 
+func detectElevator() string {
+	// pkexec shows a GUI password dialog (polkit) — works without a terminal
+	if _, err := exec.LookPath("pkexec"); err == nil {
+		return "pkexec"
+	}
+	return "sudo"
+}
+
 func detectPkgManager() (name string, installCmd []string) {
+	elevator := detectElevator()
 	managers := []struct {
 		bin  string
 		name string
 		args []string
 	}{
-		{"apt-get", "apt", []string{"sudo", "apt-get", "install", "-y"}},
-		{"dnf", "dnf", []string{"sudo", "dnf", "install", "-y"}},
-		{"pacman", "pacman", []string{"sudo", "pacman", "-S", "--noconfirm"}},
-		{"zypper", "zypper", []string{"sudo", "zypper", "install", "-y"}},
+		{"apt-get", "apt", []string{elevator, "apt-get", "install", "-y"}},
+		{"dnf", "dnf", []string{elevator, "dnf", "install", "-y"}},
+		{"pacman", "pacman", []string{elevator, "pacman", "-S", "--noconfirm"}},
+		{"zypper", "zypper", []string{elevator, "zypper", "install", "-y"}},
 	}
 	for _, m := range managers {
 		if _, err := exec.LookPath(m.bin); err == nil {
