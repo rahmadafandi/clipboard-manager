@@ -7,10 +7,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Version is set at build time via -ldflags
+var Version = "dev"
+
 var rootCmd = &cobra.Command{
-	Use:   "clipboard-manager",
-	Short: "A CLI clipboard manager",
-	Long:  `A clipboard manager that watches your clipboard history and allows you to select and paste items.`,
+	Use:     "clipboard-manager",
+	Short:   "A CLI clipboard manager",
+	Long:    `A clipboard manager that watches your clipboard history and allows you to select and paste items.`,
+	Version: Version,
 	Run: func(cmd *cobra.Command, args []string) {
 		// Default to pick command if no args
 		pickCmd.Run(cmd, args)
