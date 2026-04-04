@@ -62,6 +62,7 @@ func writeImageToClipboard(data []byte) {
 }
 
 func showNotification(msg string) {
-	script := fmt.Sprintf(`display notification "%s" with title "Clipboard Manager"`, msg)
+	safe := strings.ReplaceAll(msg, `"`, `\"`)
+	script := fmt.Sprintf(`display notification "%s" with title "Clipboard Manager"`, safe)
 	exec.Command("osascript", "-e", script).Run()
 }

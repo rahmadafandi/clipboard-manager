@@ -190,18 +190,6 @@ const gsettingsSchema = "org.gnome.settings-daemon.plugins.media-keys"
 const gsettingsBindingSchema = "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding"
 const gsettingsPath = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings"
 
-func getExePath() (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
-	exe, err = filepath.EvalSymlinks(exe)
-	if err != nil {
-		return "", err
-	}
-	return exe, nil
-}
-
 func getAutostartPath() (string, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {

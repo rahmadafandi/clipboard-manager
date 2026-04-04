@@ -9,17 +9,13 @@ import (
 type Config struct {
 	MaxHistory      int    `json:"max_history"`
 	AutoExpireHours int    `json:"auto_expire_hours"`
-	PreviewLines    int    `json:"preview_lines"`
-	PreviewWidth    int    `json:"preview_width"`
 	FilePath        string `json:"-"`
 }
 
 func DefaultConfig() *Config {
 	return &Config{
 		MaxHistory:      50,
-		AutoExpireHours: 0, // 0 = disabled
-		PreviewLines:    1,
-		PreviewWidth:    80,
+		AutoExpireHours: 0,
 	}
 }
 
@@ -57,15 +53,8 @@ func Load() (*Config, error) {
 		return cfg, err
 	}
 
-	// Enforce minimums
 	if cfg.MaxHistory <= 0 {
 		cfg.MaxHistory = 50
-	}
-	if cfg.PreviewLines <= 0 {
-		cfg.PreviewLines = 1
-	}
-	if cfg.PreviewWidth <= 0 {
-		cfg.PreviewWidth = 80
 	}
 
 	return cfg, nil

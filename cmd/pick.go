@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"io"
 	"os"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -16,8 +15,8 @@ import (
 var docStyle = lipgloss.NewStyle().Margin(1, 2)
 
 type itemWrapper struct {
-	item     storage.ClipItem
-	origIdx  int // original index in storage (for delete/pin)
+	item    storage.ClipItem
+	origIdx int
 }
 
 func (i itemWrapper) FilterValue() string {
@@ -50,34 +49,7 @@ func (i itemWrapper) Description() string {
 	return ts
 }
 
-type delegate struct{}
-
-func (d delegate) Height() int                               { return 1 }
-func (d delegate) Spacing() int                              { return 0 }
-func (d delegate) Update(msg tea.Msg, m *list.Model) tea.Cmd { return nil }
-func (d delegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
-	i, ok := listItem.(itemWrapper)
-	if !ok {
-		return
-	}
-
-	str := fmt.Sprintf("%d. %s", index+1, i.Title())
-
-	fn := itemStyle.Render
-	if index == m.Index() {
-		fn = func(s ...string) string {
-			return selectedItemStyle.Render("> " + s[0])
-		}
-	}
-
-	fmt.Fprint(w, fn(str))
-}
-
-var (
-	itemStyle         = lipgloss.NewStyle().PaddingLeft(4)
-	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("170"))
-	helpStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).MarginLeft(2)
-)
+var helpStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).MarginLeft(2)
 
 var pickCmd = &cobra.Command{
 	Use:   "pick",
@@ -100,7 +72,6 @@ var pickCmd = &cobra.Command{
 			return
 		}
 
-		// Reverse items to show newest first
 		var teaItems []list.Item
 		for i := len(items) - 1; i >= 0; i-- {
 			teaItems = append(teaItems, itemWrapper{item: items[i], origIdx: i})
@@ -138,8 +109,7 @@ func (m pickModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			i, ok := m.list.SelectedItem().(itemWrapper)
 			if ok {
-				err := clipboard.Init()
-				if err == nil {
+				if err := clipboard.Init(); err == nil {
 					if i.item.Type == storage.Text {
 						clipboard.Write(clipboard.FmtText, []byte(i.item.TextContent))
 					} else {
@@ -153,7 +123,6 @@ func (m pickModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			i, ok := m.list.SelectedItem().(itemWrapper)
 			if ok {
 				m.storage.Delete(i.origIdx)
-				// Reload list
 				return m, m.reloadItems()
 			}
 

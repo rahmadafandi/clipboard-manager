@@ -14,141 +14,63 @@ import (
 	"golang.design/x/clipboard"
 )
 
-var waylandLaunchers = []launcher{
-	{
-		bin: "wofi",
-		args: func() []string {
-			return []string{"--dmenu", "-i", "-p", "Clipboard", "--lines", "10"}
-		},
-		imgArgs: func() []string {
-			return []string{"--allow-images"}
-		},
-		fmtLine: func(idx int, item storage.ClipItem, imgPath string) string {
-			if item.Type == storage.Image && imgPath != "" {
-				return fmt.Sprintf("img:%s:text:%d. [Image]", imgPath, idx+1)
-			}
-			return defaultFmtLine(idx, item, imgPath)
-		},
-		parseIdx: func(output string) (int, bool) {
-			s := output
-			if strings.HasPrefix(s, "img:") {
-				if i := strings.Index(s, ":text:"); i != -1 {
-					s = s[i+len(":text:"):]
-				}
-			}
-			parts := strings.SplitN(s, ".", 2)
-			if len(parts) < 2 {
-				return 0, false
-			}
-			num, err := strconv.Atoi(strings.TrimSpace(parts[0]))
-			if err != nil {
-				return 0, false
-			}
-			return num - 1, true
-		},
+// Shared launcher definitions — each defined once.
+var wofiLauncher = launcher{
+	bin: "wofi",
+	args: func() []string {
+		return []string{"--dmenu", "-i", "-p", "Clipboard", "--lines", "10"}
 	},
-	{
-		bin: "fuzzel",
-		args: func() []string {
-			return []string{"--dmenu", "--prompt", "Clipboard > ", "--lines", "10"}
-		},
-		imgArgs:  func() []string { return nil },
-		fmtLine:  defaultFmtLine,
-		parseIdx: func(output string) (int, bool) { return parseIdxFromNumber(output) },
+	imgArgs: func() []string {
+		return []string{"--allow-images"}
 	},
-	{
-		bin:  "rofi",
-		args: rofiArgs,
-		imgArgs: func() []string {
-			return []string{"-show-icons"}
-		},
-		fmtLine: rofiImgFmtLine,
-		parseIdx: func(output string) (int, bool) {
-			num, err := strconv.Atoi(strings.TrimSpace(output))
-			if err != nil {
-				return 0, false
-			}
-			return num, true
-		},
+	fmtLine: func(idx int, item storage.ClipItem, imgPath string) string {
+		if item.Type == storage.Image && imgPath != "" {
+			return fmt.Sprintf("img:%s:text:%d. [Image]", imgPath, idx+1)
+		}
+		return defaultFmtLine(idx, item, imgPath)
 	},
-	{
-		bin: "dmenu",
-		args: func() []string {
-			return []string{"-i", "-l", "10", "-p", "Clipboard"}
-		},
-		imgArgs:  func() []string { return nil },
-		fmtLine:  defaultFmtLine,
-		parseIdx: func(output string) (int, bool) { return parseIdxFromNumber(output) },
-	},
+	parseIdx: parseWofiIdx,
 }
 
-var x11Launchers = []launcher{
-	{
-		bin:  "rofi",
-		args: rofiArgs,
-		imgArgs: func() []string {
-			return []string{"-show-icons"}
-		},
-		fmtLine: rofiImgFmtLine,
-		parseIdx: func(output string) (int, bool) {
-			num, err := strconv.Atoi(strings.TrimSpace(output))
-			if err != nil {
-				return 0, false
-			}
-			return num, true
-		},
+var fuzzelLauncher = launcher{
+	bin: "fuzzel",
+	args: func() []string {
+		return []string{"--dmenu", "--prompt", "Clipboard > ", "--lines", "10"}
 	},
-	{
-		bin: "dmenu",
-		args: func() []string {
-			return []string{"-i", "-l", "10", "-p", "Clipboard"}
-		},
-		imgArgs:  func() []string { return nil },
-		fmtLine:  defaultFmtLine,
-		parseIdx: func(output string) (int, bool) { return parseIdxFromNumber(output) },
-	},
-	{
-		bin: "wofi",
-		args: func() []string {
-			return []string{"--dmenu", "-i", "-p", "Clipboard", "--lines", "10"}
-		},
-		imgArgs: func() []string {
-			return []string{"--allow-images"}
-		},
-		fmtLine: func(idx int, item storage.ClipItem, imgPath string) string {
-			if item.Type == storage.Image && imgPath != "" {
-				return fmt.Sprintf("img:%s:text:%d. [Image]", imgPath, idx+1)
-			}
-			return defaultFmtLine(idx, item, imgPath)
-		},
-		parseIdx: func(output string) (int, bool) {
-			s := output
-			if strings.HasPrefix(s, "img:") {
-				if i := strings.Index(s, ":text:"); i != -1 {
-					s = s[i+len(":text:"):]
-				}
-			}
-			parts := strings.SplitN(s, ".", 2)
-			if len(parts) < 2 {
-				return 0, false
-			}
-			num, err := strconv.Atoi(strings.TrimSpace(parts[0]))
-			if err != nil {
-				return 0, false
-			}
-			return num - 1, true
-		},
-	},
-	{
-		bin: "fuzzel",
-		args: func() []string {
-			return []string{"--dmenu", "--prompt", "Clipboard > ", "--lines", "10"}
-		},
-		imgArgs:  func() []string { return nil },
-		fmtLine:  defaultFmtLine,
-		parseIdx: func(output string) (int, bool) { return parseIdxFromNumber(output) },
-	},
+	imgArgs:  func() []string { return nil },
+	fmtLine:  defaultFmtLine,
+	parseIdx: func(output string) (int, bool) { return parseIdxFromNumber(output) },
 }
+
+var rofiLauncher = launcher{
+	bin:  "rofi",
+	args: rofiArgs,
+	imgArgs: func() []string {
+		return []string{"-show-icons"}
+	},
+	fmtLine: func(idx int, item storage.ClipItem, imgPath string) string {
+		label := defaultFmtLine(idx, item, imgPath)
+		if item.Type == storage.Image && imgPath != "" {
+			return label + "\x00icon\x1f" + imgPath
+		}
+		return label
+	},
+	parseIdx: parseRofiIdx,
+}
+
+var dmenuLauncher = launcher{
+	bin: "dmenu",
+	args: func() []string {
+		return []string{"-i", "-l", "10", "-p", "Clipboard"}
+	},
+	imgArgs:  func() []string { return nil },
+	fmtLine:  defaultFmtLine,
+	parseIdx: func(output string) (int, bool) { return parseIdxFromNumber(output) },
+}
+
+// Order differs per display server — Wayland-native launchers first on Wayland.
+var waylandLaunchers = []launcher{wofiLauncher, fuzzelLauncher, rofiLauncher, dmenuLauncher}
+var x11Launchers = []launcher{rofiLauncher, dmenuLauncher, wofiLauncher, fuzzelLauncher}
 
 func rofiArgs() []string {
 	return []string{
@@ -161,12 +83,22 @@ func rofiArgs() []string {
 	}
 }
 
-func rofiImgFmtLine(idx int, item storage.ClipItem, imgPath string) string {
-	label := defaultFmtLine(idx, item, imgPath)
-	if item.Type == storage.Image && imgPath != "" {
-		return label + "\x00icon\x1f" + imgPath
+func parseRofiIdx(output string) (int, bool) {
+	num, err := strconv.Atoi(strings.TrimSpace(output))
+	if err != nil {
+		return 0, false
 	}
-	return label
+	return num, true
+}
+
+func parseWofiIdx(output string) (int, bool) {
+	s := output
+	if strings.HasPrefix(s, "img:") {
+		if i := strings.Index(s, ":text:"); i != -1 {
+			s = s[i+len(":text:"):]
+		}
+	}
+	return parseIdxFromNumber(s)
 }
 
 func isWayland() bool {

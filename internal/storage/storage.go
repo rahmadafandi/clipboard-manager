@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -31,7 +32,7 @@ type Snippet struct {
 
 type FileStorage struct {
 	mu       sync.Mutex
-	FilePath string
+	filePath string
 	dir      string
 }
 
@@ -47,23 +48,24 @@ func NewFileStorage() (*FileStorage, error) {
 	}
 
 	return &FileStorage{
-		FilePath: filepath.Join(dir, "history.json"),
+		filePath: filepath.Join(dir, "history.json"),
 		dir:      dir,
 	}, nil
 }
 
-func (s *FileStorage) Load() ([]ClipItem, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+func (s *FileStorage) Path() string {
+	return s.filePath
+}
 
-	data, err := os.ReadFile(s.FilePath)
+// load reads items without locking (caller must hold mu).
+func (s *FileStorage) load() ([]ClipItem, error) {
+	data, err := os.ReadFile(s.filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []ClipItem{}, nil
 		}
 		return nil, err
 	}
-
 	var items []ClipItem
 	if err := json.Unmarshal(data, &items); err != nil {
 		return nil, err
@@ -71,55 +73,43 @@ func (s *FileStorage) Load() ([]ClipItem, error) {
 	return items, nil
 }
 
+// save writes items without locking (caller must hold mu).
+func (s *FileStorage) save(items []ClipItem) error {
+	data, err := json.Marshal(items)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(s.filePath, data, 0644)
+}
+
+func (s *FileStorage) Load() ([]ClipItem, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.load()
+}
+
 func (s *FileStorage) Save(items []ClipItem) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	data, err := json.MarshalIndent(items, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(s.FilePath, data, 0644)
+	return s.save(items)
 }
 
-func (s *FileStorage) Append(item ClipItem) error {
-	items, err := s.Load()
+func (s *FileStorage) AppendWithLimit(item ClipItem, maxSize int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	items, err := s.load()
 	if err != nil {
 		return err
 	}
 
-	// Check duplicates
 	if len(items) > 0 {
 		last := items[len(items)-1]
 		if last.Type == item.Type {
 			if item.Type == Text && last.TextContent == item.TextContent {
 				return nil
 			}
-		}
-	}
-
-	items = append(items, item)
-
-	// Limit size (only remove unpinned items)
-	if len(items) > 50 {
-		items = trimToLimit(items, 50)
-	}
-
-	return s.Save(items)
-}
-
-// AppendWithLimit appends and trims to the given max size.
-func (s *FileStorage) AppendWithLimit(item ClipItem, maxSize int) error {
-	items, err := s.Load()
-	if err != nil {
-		return err
-	}
-
-	if len(items) > 0 {
-		last := items[len(items)-1]
-		if last.Type == item.Type {
-			if item.Type == Text && last.TextContent == item.TextContent {
+			if item.Type == Image && bytes.Equal(last.ImageData, item.ImageData) {
 				return nil
 			}
 		}
@@ -131,30 +121,37 @@ func (s *FileStorage) AppendWithLimit(item ClipItem, maxSize int) error {
 		items = trimToLimit(items, maxSize)
 	}
 
-	return s.Save(items)
+	return s.save(items)
 }
 
 // trimToLimit removes oldest unpinned items to fit within limit.
 func trimToLimit(items []ClipItem, limit int) []ClipItem {
-	for len(items) > limit {
-		removed := false
-		for i := 0; i < len(items); i++ {
-			if !items[i].Pinned {
-				items = append(items[:i], items[i+1:]...)
-				removed = true
-				break
-			}
-		}
-		if !removed {
-			break // All items are pinned
+	var pinned, unpinned []ClipItem
+	for _, item := range items {
+		if item.Pinned {
+			pinned = append(pinned, item)
+		} else {
+			unpinned = append(unpinned, item)
 		}
 	}
-	return items
+	keep := limit - len(pinned)
+	if keep < 0 {
+		keep = 0
+	}
+	if len(unpinned) > keep {
+		unpinned = unpinned[len(unpinned)-keep:]
+	}
+	result := make([]ClipItem, 0, len(pinned)+len(unpinned))
+	result = append(result, pinned...)
+	result = append(result, unpinned...)
+	return result
 }
 
-// Delete removes an item at the given index.
 func (s *FileStorage) Delete(index int) error {
-	items, err := s.Load()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	items, err := s.load()
 	if err != nil {
 		return err
 	}
@@ -162,12 +159,14 @@ func (s *FileStorage) Delete(index int) error {
 		return nil
 	}
 	items = append(items[:index], items[index+1:]...)
-	return s.Save(items)
+	return s.save(items)
 }
 
-// TogglePin toggles the pinned state of an item at the given index.
 func (s *FileStorage) TogglePin(index int) error {
-	items, err := s.Load()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	items, err := s.load()
 	if err != nil {
 		return err
 	}
@@ -175,12 +174,14 @@ func (s *FileStorage) TogglePin(index int) error {
 		return nil
 	}
 	items[index].Pinned = !items[index].Pinned
-	return s.Save(items)
+	return s.save(items)
 }
 
-// Clear removes all non-pinned items.
 func (s *FileStorage) Clear() error {
-	items, err := s.Load()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	items, err := s.load()
 	if err != nil {
 		return err
 	}
@@ -190,17 +191,20 @@ func (s *FileStorage) Clear() error {
 			pinned = append(pinned, item)
 		}
 	}
-	return s.Save(pinned)
+	return s.save(pinned)
 }
 
-// ClearAll removes all items including pinned.
 func (s *FileStorage) ClearAll() error {
-	return s.Save([]ClipItem{})
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.save([]ClipItem{})
 }
 
-// PurgeExpired removes items past their ExpiresAt time.
 func (s *FileStorage) PurgeExpired() error {
-	items, err := s.Load()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	items, err := s.load()
 	if err != nil {
 		return err
 	}
@@ -215,7 +219,7 @@ func (s *FileStorage) PurgeExpired() error {
 	if len(kept) == len(items) {
 		return nil
 	}
-	return s.Save(kept)
+	return s.save(kept)
 }
 
 // --- Snippet Storage ---
@@ -242,11 +246,8 @@ func (s *FileStorage) LoadSnippets() ([]Snippet, error) {
 	return snippets, nil
 }
 
-func (s *FileStorage) SaveSnippets(snippets []Snippet) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	data, err := json.MarshalIndent(snippets, "", "  ")
+func (s *FileStorage) saveSnippets(snippets []Snippet) error {
+	data, err := json.Marshal(snippets)
 	if err != nil {
 		return err
 	}
@@ -254,30 +255,42 @@ func (s *FileStorage) SaveSnippets(snippets []Snippet) error {
 }
 
 func (s *FileStorage) AddSnippet(name, content string) error {
-	snippets, err := s.LoadSnippets()
-	if err != nil {
-		return err
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	data, err := os.ReadFile(s.snippetPath())
+	var snippets []Snippet
+	if err == nil {
+		json.Unmarshal(data, &snippets)
 	}
-	// Update if exists
+
 	for i, sn := range snippets {
 		if sn.Name == name {
 			snippets[i].Content = content
-			return s.SaveSnippets(snippets)
+			return s.saveSnippets(snippets)
 		}
 	}
 	snippets = append(snippets, Snippet{Name: name, Content: content})
-	return s.SaveSnippets(snippets)
+	return s.saveSnippets(snippets)
 }
 
 func (s *FileStorage) RemoveSnippet(name string) error {
-	snippets, err := s.LoadSnippets()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	data, err := os.ReadFile(s.snippetPath())
 	if err != nil {
-		return err
+		return nil
 	}
+	var snippets []Snippet
+	if err := json.Unmarshal(data, &snippets); err != nil {
+		return nil
+	}
+
 	for i, sn := range snippets {
 		if sn.Name == name {
 			snippets = append(snippets[:i], snippets[i+1:]...)
-			return s.SaveSnippets(snippets)
+			return s.saveSnippets(snippets)
 		}
 	}
 	return nil

@@ -75,11 +75,7 @@ func getLaunchAgentPath() (string, error) {
 }
 
 func setupAutostart() error {
-	exe, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	exe, err = filepath.EvalSymlinks(exe)
+	exe, err := getExePath()
 	if err != nil {
 		return err
 	}

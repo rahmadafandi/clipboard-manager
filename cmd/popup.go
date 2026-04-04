@@ -35,30 +35,17 @@ func defaultFmtLine(idx int, item storage.ClipItem, imgPath string) string {
 	return fmt.Sprintf("%d. %s[Image] %d bytes", idx+1, pin, len(item.ImageData))
 }
 
-// sortPinnedFirst returns items sorted with pinned items first, then newest first.
-func sortPinnedFirst(items []storage.ClipItem) (sorted []storage.ClipItem, origIndices []int) {
-	// Reverse (newest first)
-	reversed := make([]storage.ClipItem, len(items))
-	revIndices := make([]int, len(items))
-	for i, item := range items {
-		reversed[len(items)-1-i] = item
-		revIndices[len(items)-1-i] = i
-	}
-
-	// Pinned first
-	for i, item := range reversed {
-		if item.Pinned {
-			sorted = append(sorted, item)
-			origIndices = append(origIndices, revIndices[i])
+// sortPinnedFirst returns items with pinned first, then newest first.
+func sortPinnedFirst(items []storage.ClipItem) []storage.ClipItem {
+	var pinned, unpinned []storage.ClipItem
+	for i := len(items) - 1; i >= 0; i-- {
+		if items[i].Pinned {
+			pinned = append(pinned, items[i])
+		} else {
+			unpinned = append(unpinned, items[i])
 		}
 	}
-	for i, item := range reversed {
-		if !item.Pinned {
-			sorted = append(sorted, item)
-			origIndices = append(origIndices, revIndices[i])
-		}
-	}
-	return
+	return append(pinned, unpinned...)
 }
 
 func parseIdxFromNumber(output string) (int, bool) {
@@ -125,8 +112,9 @@ var popupCmd = &cobra.Command{
 			return
 		}
 
-		// Purge expired items first
 		s.PurgeExpired()
+
+		// Reload after purge
 		items, err = s.Load()
 		if err != nil || len(items) == 0 {
 			showNotification("Clipboard history is empty")
@@ -139,8 +127,7 @@ var popupCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		// Sort: pinned first, then newest first
-		sorted, _ := sortPinnedFirst(items)
+		sorted := sortPinnedFirst(items)
 
 		// Save image thumbnails to temp files
 		tmpDir, imgPaths := saveImageThumbs(sorted)
