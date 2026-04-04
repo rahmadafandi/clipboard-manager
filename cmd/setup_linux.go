@@ -178,8 +178,16 @@ func isSetupDone() bool {
 	if err != nil {
 		return false
 	}
-	_, err = os.Stat(path)
-	return err == nil
+	if _, err := os.Stat(path); err != nil {
+		return false
+	}
+	// Also check that all required binaries are available
+	for _, pkg := range requiredPkgs() {
+		if _, err := exec.LookPath(pkg.bin); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func removeAutostart() error {
