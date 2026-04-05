@@ -9,6 +9,7 @@ import (
 type Config struct {
 	MaxHistory      int    `json:"max_history"`
 	AutoExpireHours int    `json:"auto_expire_hours"`
+	Keybinding      string `json:"keybinding"`
 	FilePath        string `json:"-"`
 }
 
@@ -16,6 +17,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		MaxHistory:      50,
 		AutoExpireHours: 0,
+		Keybinding:      "<Super>v",
 	}
 }
 
@@ -55,6 +57,9 @@ func Load() (*Config, error) {
 
 	if cfg.MaxHistory <= 0 {
 		cfg.MaxHistory = 50
+	}
+	if cfg.Keybinding == "" {
+		cfg.Keybinding = "<Super>v"
 	}
 
 	return cfg, nil

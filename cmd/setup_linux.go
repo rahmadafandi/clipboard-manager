@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/rahmadafandi/clipboard-manager/internal/config"
 )
 
 type pkgInfo struct {
@@ -324,7 +326,7 @@ func setupKeybinding() error {
 		return err
 	}
 
-	command := fmt.Sprintf("%s popup", exe)
+	command := fmt.Sprintf("%s pick", exe)
 
 	// Check if binding already exists
 	existingPath := findExistingBinding()
@@ -339,11 +341,13 @@ func setupKeybinding() error {
 
 	dconfPath := bindingPath + "/"
 
-	// Set the keybinding properties
+	cfg, _ := config.Load()
+	binding := cfg.Keybinding
+
 	cmds := [][]string{
 		{"gsettings", "set", gsettingsBindingSchema + ":" + dconfPath, "name", "Clipboard Manager"},
 		{"gsettings", "set", gsettingsBindingSchema + ":" + dconfPath, "command", command},
-		{"gsettings", "set", gsettingsBindingSchema + ":" + dconfPath, "binding", "<Super>v"},
+		{"gsettings", "set", gsettingsBindingSchema + ":" + dconfPath, "binding", binding},
 	}
 
 	for _, c := range cmds {

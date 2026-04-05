@@ -94,8 +94,7 @@ Config file: `~/.config/clipboard-manager/config.json`
 {
   "max_history": 50,
   "auto_expire_hours": 0,
-  "preview_lines": 1,
-  "preview_width": 80
+  "keybinding": "<Super>v"
 }
 ```
 
@@ -103,8 +102,35 @@ Config file: `~/.config/clipboard-manager/config.json`
 |---------|---------|-------------|
 | `max_history` | 50 | Maximum number of clipboard items to keep |
 | `auto_expire_hours` | 0 | Auto-delete items after N hours (0 = disabled) |
-| `preview_lines` | 1 | Lines to show in popup preview |
-| `preview_width` | 80 | Characters per line in preview |
+| `keybinding` | `<Super>v` | GNOME keybinding for popup picker (e.g. `<Ctrl><Alt>v`) |
+
+After changing `keybinding`, re-run `clipboard-manager setup` to apply.
+
+## Shell Completion
+
+Enable tab completion for your shell:
+
+**Bash:**
+```bash
+clipboard-manager completion bash | sudo tee /etc/bash_completion.d/clipboard-manager
+```
+
+**Zsh:**
+```bash
+clipboard-manager completion zsh > "${fpath[1]}/_clipboard-manager"
+```
+
+**Fish:**
+```bash
+clipboard-manager completion fish > ~/.config/fish/completions/clipboard-manager.fish
+```
+
+**PowerShell:**
+```powershell
+clipboard-manager completion powershell | Out-String | Invoke-Expression
+```
+
+Run `clipboard-manager completion <shell> --help` for more details.
 
 ## Platform Support
 
